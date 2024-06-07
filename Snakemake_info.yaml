@@ -1,0 +1,19 @@
+CONDA_ENV: {"python_env": "st_rep_python_snakemake", "Louvain": "st_rep_R_snakemake", "Leiden": "st_rep_R_snakemake", "Mclust": "st_rep_python_snakemake", "stLearn": "st_rep_python_snakemake", "BayesSpace": "st_rep_R_snakemake", "MUSE": "st_rep_python_snakemake", "SpaGCN": "st_rep_python_snakemake", "STAGATE": "stagate", "GraphST": "st_rep_python_snakemake", "AESTETIK": "st_rep_python_snakemake", "Baseline": "st_rep_python_snakemake"}
+
+LANGUAGE: {"Louvain": "Rscript", "Leiden": "Rscript", "BayesSpace": "Rscript", "Mclust": "python", "stLearn": "python", "MUSE": "python", "SpaGCN": "python", "STAGATE": "python", "GraphST": "python", "AESTETIK": "python", "Baseline": "python"}
+
+PARTITION: {"Louvain": "compute,gpu", "Leiden": "compute,gpu", "Mclust": "compute,gpu", "stLearn": "compute,gpu", "BayesSpace": "compute,gpu", "MUSE": "gpu", "SpaGCN": "compute,gpu", "STAGATE": "gpu", "GraphST": "gpu", "AESTETIK": "gpu", "Baseline": "compute,gpu"}
+
+GPU: {"Louvain": "gpu:0", "Leiden": "gpu:0", "Mclust": "gpu:0", "stLearn": "gpu:0", "BayesSpace": "gpu:0", "MUSE": "gpu:1", "SpaGCN": "gpu:0", "STAGATE": "gpu:1", "GraphST": "gpu:1", "AESTETIK": "gpu:1", "Baseline": "gpu:0"}
+
+MEM: {"Louvain": 5000, "Leiden": 6000, "Mclust": 10000, "stLearn": 32000, "BayesSpace": 15000, "MUSE": 80000, "SpaGCN": 32000, "STAGATE": 5000, "GraphST": 7000, "AESTETIK": 10000, "Baseline": 10000}
+
+TIME: {"Louvain": 10, "Leiden": 10, "Mclust": 10, "stLearn": 50, "BayesSpace": "3:00:00", "MUSE": "4:30:00", "SpaGCN": 40, "STAGATE": "2:00:00", "GraphST": "2:00:00", "AESTETIK": 50, "Baseline": 50}
+
+CPU: {"Louvain": 1, "Leiden": 1, "Mclust": 1, "stLearn": 1, "BayesSpace": 1, "MUSE": 1, "SpaGCN": 1, "STAGATE": 1, "GraphST": 1, "AESTETIK": 1, "Baseline": 1}
+
+MEM_RULES: {"structureData": 500, "extract_image_features": 50000, "preprocessH5AD": 20000, "createSeuratRDSfromH5AD": 10000, "model_best_param": 5000, "summaryARI": 150000, "summaryVMEASURE": 150000, "vizualizeClusters": 20000, "transcriptomicsAnalysis": 50000, "benchmark_summary": 8000}
+
+TMP_MEM: {"structureData": 0, "extract_image_features": "5G", "preprocessH5AD": "5G", "createSeuratRDSfromH5AD": "5G", "model_best_param": 0, "summaryARI": 0, "summaryVMEASURE": 0, "vizualizeClusters": 0, "transcriptomicsAnalysis": "5G", "benchmark_summary": 0, "Louvain": 0, "Leiden": 0, "Mclust": 0, "stLearn": "5G", "BayesSpace": 0, "MUSE": "5G", "SpaGCN": 0, "STAGATE": 0, "GraphST": 0, "AESTETIK": 0, "Baseline": 0}
+
+TIME_RULES: {"structureData": 10, "extract_image_features": "2:00:00", "preprocessH5AD": 20, "createSeuratRDSfromH5AD": 10, "model_best_param": 10, "summaryARI": "3:00:00", "summaryVMEASURE": "3:00:00", "vizualizeClusters": 10, "transcriptomicsAnalysis": 20, "benchmark_summary": 10}

@@ -1,0 +1,65 @@
+SAMPLE:
+   - "151507"
+   - "151508" 
+   - "151509" 
+   - "151510" 
+   - "151669"
+   - "151670"
+   - "151671" 
+   - "151672" 
+   - "151673" 
+   - "151674" 
+   - "151675"
+   - "151676"
+   
+DATASET: "maynard_human_brain_analysis"
+OUT_FOLDER: "out_ablation"
+
+CROSS_VALIDATION_SPLIT:    
+    - [["151507", "151508"], ["151509", "151510", "151669", "151670", "151671", "151672", "151673", "151674", "151675", "151676"]]
+    - [["151509", "151510"], ["151507", "151508", "151669", "151670", "151671", "151672", "151673", "151674", "151675", "151676"]]
+    - [["151669", "151670"], ["151507", "151508", "151509", "151510", "151671", "151672", "151673", "151674", "151675", "151676"]]
+    - [["151671", "151672"], ["151507", "151508", "151509", "151510", "151669", "151670", "151673", "151674", "151675", "151676"]]
+    - [["151673", "151674"], ["151507", "151508", "151509", "151510", "151669", "151670", "151671", "151672", "151675", "151676"]]
+    - [["151675", "151676"], ["151507", "151508", "151509", "151510", "151669", "151670", "151671", "151672", "151673", "151674"]]
+
+
+MODEL_R:  
+
+MODEL_PYTHON:
+
+MODEL_FINE_TUNE:
+    - AESTETIK
+    - AESTETIK_window_size_1
+    - AESTETIK_window_size_3
+    - AESTETIK_window_size_5
+    - AESTETIK_window_size_7
+    - AESTETIK_window_size_9
+    - AESTETIK_window_size_11
+    - AESTETIK_morphology_weight_0
+    - AESTETIK_morphology_weight_1
+    - AESTETIK_morphology_weight_1.5
+    - AESTETIK_morphology_weight_2
+    - AESTETIK_morphology_weight_3
+    - AESTETIK_triplet_loss_off
+    - AESTETIK_triplet_loss_single
+    - AESTETIK_triplet_loss_multi
+    - AESTETIK_clustering_method_kmeans
+    - AESTETIK_clustering_method_bgm
+    - AESTETIK_refine_cluster_off
+    - AESTETIK_refine_cluster_on
+    - AESTETIK_train_size_0.01
+    - AESTETIK_train_size_0.1
+    - AESTETIK_train_size_0.25
+    - AESTETIK_train_size_0.5
+    - AESTETIK_train_size_0.75
+    - AESTETIK_train_size_all
+    - AESTETIK_rec_loss_off
+    - AESTETIK_rec_loss_on
+
+
+IMAGE_FEATURES:
+    - inception
+
+DOWNSAMPLE_FACTOR: 8
+IMAGE_FORMAT: "tif"

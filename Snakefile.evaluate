@@ -1,0 +1,421 @@
+from itertools import product
+from pathlib import Path
+from tqdm import tqdm
+import socket
+import yaml
+
+####################################################################################
+
+################################# CLUSTER CONFIG ###################################
+
+####################################################################################
+
+
+with open("info.yaml", "r") as stream:
+    DATASET_INFO = yaml.safe_load(stream)
+    
+with open("../Snakemake_info.yaml", "r") as stream:
+    SNAKEMAKE_INFO = yaml.safe_load(stream)
+
+DATASET = DATASET_INFO["DATASET"]
+OUT_FOLDER = DATASET_INFO[f"OUT_FOLDER"]
+SAMPLES = DATASET_INFO["SAMPLE"]
+MODEL_R = DATASET_INFO["MODEL_R"] if DATASET_INFO["MODEL_R"] else list()
+MODEL_PYTHON = DATASET_INFO["MODEL_PYTHON"] if DATASET_INFO["MODEL_PYTHON"] else list()
+MODEL_FINE_TUNE = DATASET_INFO["MODEL_FINE_TUNE"] if DATASET_INFO["MODEL_FINE_TUNE"] else list()
+DOWNSAMPLE_FACTOR = DATASET_INFO["DOWNSAMPLE_FACTOR"]
+CROSS_VALIDATION_SPLIT = DATASET_INFO["CROSS_VALIDATION_SPLIT"]
+IMAGE_FORMAT = DATASET_INFO["IMAGE_FORMAT"]
+IMAGE_FEATURES = DATASET_INFO["IMAGE_FEATURES"]
+
+CONDA_ENV = SNAKEMAKE_INFO["CONDA_ENV"]
+LANGUAGE = SNAKEMAKE_INFO["LANGUAGE"]
+PARTITION = SNAKEMAKE_INFO["PARTITION"]
+GPU = SNAKEMAKE_INFO["GPU"]
+MEM = SNAKEMAKE_INFO["MEM"]
+TIME = SNAKEMAKE_INFO["TIME"]
+CPU = SNAKEMAKE_INFO["CPU"]
+MEM_RULES = SNAKEMAKE_INFO["MEM_RULES"]
+TMP_MEM = SNAKEMAKE_INFO["TMP_MEM"]
+TIME_RULES = SNAKEMAKE_INFO["TIME_RULES"]
+
+
+####################################################################################
+
+##################################### FOLDERS  #####################################
+
+####################################################################################
+
+CROSS_VALIDATION_SPLIT_NAMES = []
+CROSS_VALIDATION_SPLIT_DICT = {}
+PARAMETER_FILE_NAMES_DICT = {}
+
+# Create directories
+folders_to_create = [
+    "summary", "benchmarks", "data/h5ad", "data/rds", "data/image", "data/image_features",
+    "data/meta", "logs"
+]
+
+for folder in folders_to_create:
+    Path(f"{OUT_FOLDER}/{folder}").mkdir(parents=True, exist_ok=True)
+
+# Process splits
+for train_on, test_on in tqdm(CROSS_VALIDATION_SPLIT):
+    train_on_str = "_".join(train_on)
+    test_on_str = "_".join(test_on)
+    split_name = f"{train_on_str}_test_{test_on_str}"
+
+    CROSS_VALIDATION_SPLIT_DICT[train_on_str] = test_on
+    CROSS_VALIDATION_SPLIT_DICT[test_on_str] = train_on
+    CROSS_VALIDATION_SPLIT_DICT[split_name] = [train_on, test_on]
+
+    for model in MODEL_PYTHON + MODEL_R:
+        Path(f"{OUT_FOLDER}/{split_name}/{model}_evaluate/clusters_default").mkdir(parents=True, exist_ok=True)
+
+    for model in MODEL_FINE_TUNE:
+        fine_tune_folder = f"{OUT_FOLDER}/{split_name}/{model}_fine_tune"
+        Path(fine_tune_folder).mkdir(parents=True, exist_ok=True)
+
+        for subfolder in ["clusters", "latent", "parameters", "loss"]:
+            Path(f"{fine_tune_folder}/{subfolder}").mkdir(parents=True, exist_ok=True)
+
+        Path(f"{OUT_FOLDER}/{split_name}/{model}_evaluate/clusters").mkdir(parents=True, exist_ok=True)
+        Path(f"{OUT_FOLDER}/{split_name}/{model}_evaluate/latent").mkdir(parents=True, exist_ok=True)
+        Path(f"{OUT_FOLDER}/{split_name}/{model}_evaluate/loss").mkdir(parents=True, exist_ok=True)
+
+        with open(f"../workflows/configs/config_{model}.yaml", "r") as stream:
+            INFO = yaml.safe_load(stream)
+
+        parameter_settings = [dict(zip(INFO, v)) for v in product(*INFO.values())]
+
+        PARAMETER_FILE_NAMES = []
+        for setting in parameter_settings:
+        
+            name_setting = str(setting).replace("'", "").replace(" ", "").replace("{", "").replace("}", "").replace(":", "_").replace(",", "_")
+            param_path = f"{OUT_FOLDER}/{split_name}/{model}_fine_tune/parameters/{name_setting}.yaml"
+            
+            if not os.path.isfile(param_path):
+                with open(param_path, "w") as outfile:
+                    yaml.dump(setting, outfile, default_flow_style=False)
+
+            PARAMETER_FILE_NAMES.append(name_setting)
+
+        PARAMETER_FILE_NAMES_DICT[model] = PARAMETER_FILE_NAMES
+
+    CROSS_VALIDATION_SPLIT_NAMES.append(split_name)
+
+
+####################################################################################
+
+#################################### MAIN RULE #####################################
+
+####################################################################################
+
+
+rule all:
+    input:
+        expand(OUT_FOLDER + "/{cross_validation_combination}/{model}_fine_tune/parameters/best_param.yaml", 
+        model=MODEL_FINE_TUNE, 
+        cross_validation_combination=CROSS_VALIDATION_SPLIT_NAMES),
+        OUT_FOLDER + "/summaryARI.ipynb",
+        #expand(OUT_FOLDER + "/summary/transcriptomicsAnalysis_{sample}.html", sample=SAMPLES),
+        expand(OUT_FOLDER + "/summary/vizualizeClusters_{sample}.ipynb", sample=SAMPLES),
+        OUT_FOLDER + "/benchmark_summary.ipynb"
+        
+####################################################################################
+
+###################################### TRAIN ######################################
+
+####################################################################################
+
+rule model_fine_tune:
+    input:
+        OUT_FOLDER + "/data/h5ad/{sample}.h5ad",
+        *[OUT_FOLDER + f"/data/image_features/{{sample}}_{image_feature}.npy" for image_feature in IMAGE_FEATURES],
+        script=lambda wc: f"../workflows/models/model_{wc.model.split('_')[0]}.{'py' if LANGUAGE[wc.model.split('_')[0]] == 'python' else 'R'}"
+    output:
+        csv = OUT_FOLDER + "/{cross_validation_combination}/{model}_fine_tune/clusters/model-{sample}-{param_file_name}.csv"
+    params:
+        node = socket.gethostname(),
+        img_format = IMAGE_FORMAT,
+        exec_lang=lambda wc: LANGUAGE[wc.model.split("_")[0]],
+        out_folder = OUT_FOLDER
+    threads: lambda wc: CPU[wc.model.split("_")[0]]
+    resources:
+        mem_mb=lambda wc: MEM[wc.model.split("_")[0]],
+        p=lambda wc: PARTITION[wc.model.split("_")[0]],
+        gpu=lambda wc: GPU[wc.model.split("_")[0]],
+        time=lambda wc: TIME[wc.model.split("_")[0]],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname=lambda wc: wc.model.split("_")[0],
+        tmp=lambda wc: TMP_MEM[wc.model.split("_")[0]]
+    conda: lambda wc: CONDA_ENV[wc.model.split("_")[0]]
+    benchmark: OUT_FOLDER + "/benchmarks/{model}/fine_tune_{cross_validation_combination}/{sample}/{param_file_name}.log"
+    shell:
+        """
+        echo {params.node}
+        {params.exec_lang} {input.script} {wildcards.sample} {wildcards.param_file_name} {params.img_format} {wildcards.cross_validation_combination} {wildcards.model} 'fine_tune' {params.out_folder}
+        """
+
+
+def training_information_param(wildcards):
+    TRAIN_SAMPLES = CROSS_VALIDATION_SPLIT_DICT[wildcards.cross_validation_combination][0]
+    PARAMETER_FILE_NAMES = PARAMETER_FILE_NAMES_DICT[wildcards.model]
+    return expand(OUT_FOLDER + "/{cross_validation_combination}/{model}_fine_tune/clusters/model-{sample}-{param_file_name}.csv",
+                                sample=TRAIN_SAMPLES, 
+                                param_file_name=PARAMETER_FILE_NAMES, 
+                                cross_validation_combination=wildcards.cross_validation_combination, model=wildcards.model
+    )
+
+####################################################################################
+
+##################################### EVALUATE #####################################
+
+####################################################################################
+
+rule model_best_param:
+    input:
+        training_information_param,
+        notebook = "../workflows/analysis/compute_best_param.ipynb"
+    output:
+        OUT_FOLDER + "/{cross_validation_combination}/{model}_fine_tune/parameters/best_param.yaml",
+        notebook = OUT_FOLDER + "/{cross_validation_combination}/{model}_fine_tune/notebooks/compute_best_param.ipynb",
+    params:
+        out_folder = OUT_FOLDER
+    threads: 1
+    resources:
+        p="compute,gpu",
+        gpu="gpu:0",
+        mem_mb=MEM_RULES["model_best_param"],
+        time=TIME_RULES["model_best_param"],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname="model_best_param",
+        tmp=TMP_MEM["model_best_param"]
+    conda: CONDA_ENV["python_env"]
+    benchmark: OUT_FOLDER + "/benchmarks/model_best_param/{cross_validation_combination}/{model}.log"
+    shell:
+        """
+        papermill {input.notebook} {output.notebook} -p cross_validation_combination {wildcards.cross_validation_combination} -p model {wildcards.model} -p mode 'fine_tune' -p out_folder {params.out_folder}
+        """
+
+rule model_evaluate:
+    input:
+        OUT_FOLDER + "/{cross_validation_combination}/{model}_fine_tune/parameters/best_param.yaml",
+        OUT_FOLDER + "/data/h5ad/{sample}.h5ad",
+        *[OUT_FOLDER + f"/data/image_features/{{sample}}_{image_feature}.npy" for image_feature in IMAGE_FEATURES],
+        script=lambda wc: f"../workflows/models/model_{wc.model.split('_')[0]}.{'py' if LANGUAGE[wc.model.split('_')[0]] == 'python' else 'R'}"
+    output:
+        csv = OUT_FOLDER + "/{cross_validation_combination}/{model}_evaluate/clusters/model-{sample}-best_param.csv"
+    params:
+        node = socket.gethostname(),
+        img_format = IMAGE_FORMAT,
+        exec_lang=lambda wc: LANGUAGE[wc.model.split("_")[0]],
+        out_folder = OUT_FOLDER
+    threads: lambda wc: CPU[wc.model.split("_")[0]]
+    resources:
+        mem_mb=lambda wc: MEM[wc.model.split("_")[0]],
+        p=lambda wc: PARTITION[wc.model.split("_")[0]],
+        gpu=lambda wc: GPU[wc.model.split("_")[0]],
+        time=lambda wc: TIME[wc.model.split("_")[0]],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname=lambda wc: wc.model.split("_")[0],
+        tmp=lambda wc: TMP_MEM[wc.model.split("_")[0]]
+    conda: lambda wc: CONDA_ENV[wc.model.split("_")[0]]
+    benchmark: OUT_FOLDER + "/benchmarks/{model}/evaluate_{cross_validation_combination}/{sample}.log"
+    shell:
+        """
+        echo {params.node}
+        {params.exec_lang} {input.script} {wildcards.sample} 'best_param' {params.img_format} {wildcards.cross_validation_combination} {wildcards.model} 'evaluate' {params.out_folder}
+        """
+
+rule model_python:
+    input:
+        OUT_FOLDER + "/data/h5ad/{sample}.h5ad",
+        *[OUT_FOLDER + f"/data/image_features/{{sample}}_{image_feature}.npy" for image_feature in IMAGE_FEATURES],
+        script=lambda wc: f"../workflows/models/model_{wc.model.split('_')[0]}.py"
+    output:
+        csv = OUT_FOLDER + "/{cross_validation_combination}/{model}_evaluate/clusters_default/model-{sample}-best_param.csv"
+    params:
+        node = socket.gethostname(),
+        img_format = IMAGE_FORMAT,
+        out_folder = OUT_FOLDER
+    threads: lambda wc: CPU[wc.model.split("_")[0]]
+    resources:
+        mem_mb=lambda wc: MEM[wc.model.split("_")[0]],
+        p=lambda wc: PARTITION[wc.model.split("_")[0]],
+        gpu=lambda wc: GPU[wc.model.split("_")[0]],
+        time=lambda wc: TIME[wc.model.split("_")[0]],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname=lambda wc: wc.model.split("_")[0],
+        tmp=lambda wc: TMP_MEM[wc.model.split("_")[0]]
+    conda: lambda wc: CONDA_ENV[wc.model.split("_")[0]]
+    benchmark: OUT_FOLDER + "/benchmarks/{model}/evaluate_{cross_validation_combination}/{sample}.log"
+    shell:
+        """
+        echo {params.node}
+        python {input.script} {wildcards.sample} 'best_param' {params.img_format} {wildcards.cross_validation_combination} {wildcards.model} 'evaluate' {params.out_folder}
+        """
+
+rule model_R:
+    input:
+        *[OUT_FOLDER + f"/data/image_features/{{sample}}_{image_feature}.npy" for image_feature in IMAGE_FEATURES],
+        Rscript = "../workflows/models/model_{model}.R",
+        rds = OUT_FOLDER + "/data/rds/{sample}.rds"
+    output:
+        csv = OUT_FOLDER + "/{cross_validation_combination}/{model}_evaluate/clusters_default/model-{sample}-best_param.csv"
+    params:
+        node = socket.gethostname(),
+        out_folder = OUT_FOLDER
+    threads: lambda wc: CPU[wc.model.split("_")[0]]
+    resources:
+        mem_mb=lambda wc: MEM[wc.model.split("_")[0]],
+        p=lambda wc: PARTITION[wc.model.split("_")[0]],
+        gpu=lambda wc: GPU[wc.model.split("_")[0]],
+        time=lambda wc: TIME[wc.model.split("_")[0]],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname=lambda wc: wc.model.split("_")[0],
+        tmp=lambda wc: TMP_MEM[wc.model.split("_")[0]]
+    conda: lambda wc: CONDA_ENV[wc.model.split("_")[0]]
+    benchmark: OUT_FOLDER + "/benchmarks/{model}/evaluate_{cross_validation_combination}/{sample}.log"
+    shell:
+        """
+        echo {params.node}
+        Rscript {input.Rscript} {wildcards.sample} {wildcards.model} {wildcards.cross_validation_combination} {params.out_folder}
+        """
+    
+model_eval_comb = []
+
+for model in MODEL_FINE_TUNE:
+    for cross_validation_combination in CROSS_VALIDATION_SPLIT_NAMES:
+        TEST_SAMPLES = CROSS_VALIDATION_SPLIT_DICT[cross_validation_combination][1]
+        for sample in TEST_SAMPLES:
+            model_eval_comb.append(OUT_FOLDER + f"/{cross_validation_combination}/{model}_evaluate/clusters/model-{sample}-best_param.csv")
+
+model_R = []
+for model in MODEL_R:
+    for cross_validation_combination in CROSS_VALIDATION_SPLIT_NAMES:
+        TEST_SAMPLES = CROSS_VALIDATION_SPLIT_DICT[cross_validation_combination][1]
+        for sample in TEST_SAMPLES:
+            model_R.append(OUT_FOLDER + f"/{cross_validation_combination}/{model}_evaluate/clusters_default/model-{sample}-best_param.csv")
+
+model_python = []
+for model in MODEL_PYTHON:
+    for cross_validation_combination in CROSS_VALIDATION_SPLIT_NAMES:
+        TEST_SAMPLES = CROSS_VALIDATION_SPLIT_DICT[cross_validation_combination][1]
+        for sample in TEST_SAMPLES:
+            model_python.append(OUT_FOLDER + f"/{cross_validation_combination}/{model}_evaluate/clusters_default/model-{sample}-best_param.csv")
+
+
+####################################################################################
+
+####################################### PLOT #######################################
+
+####################################################################################
+
+
+rule summaryARI:
+    input:
+        model_eval_comb,
+        model_R,
+        model_python,
+        notebook = "../workflows/analysis/summaryARI.ipynb"
+    output:
+        OUT_FOLDER + "/summary/summary_best_split_sample.csv",
+        notebook = OUT_FOLDER + "/summaryARI.ipynb"
+    params:
+        out_folder = OUT_FOLDER
+    threads: 1
+    resources:
+        gpu="gpu:0",
+        p="compute,gpu",
+        mem_mb=MEM_RULES["summaryARI"],
+        time=TIME_RULES["summaryARI"],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname="summaryARI",
+        tmp=TMP_MEM["summaryARI"]
+    conda: CONDA_ENV["python_env"]
+    benchmark: OUT_FOLDER + "/benchmarks/summaryARI.log"
+    shell:
+        """
+        papermill {input.notebook} {output.notebook} -p out_folder {params.out_folder}
+        """
+
+rule vizualizeClusters:
+    input:
+        OUT_FOLDER + "/summary/summary_best_split_sample.csv",
+        notebook = "../workflows/analysis/vizualizeClusters.ipynb"
+    output:
+        notebook = OUT_FOLDER + "/summary/vizualizeClusters_{sample}.ipynb"
+    params:
+        out_folder = OUT_FOLDER
+    threads: 1
+    resources:
+        gpu="gpu:0",
+        p="compute,gpu",
+        mem_mb=MEM_RULES["vizualizeClusters"],
+        time=TIME_RULES["vizualizeClusters"],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname="vizualizeClusters",
+        tmp=TMP_MEM["vizualizeClusters"]
+    conda: CONDA_ENV["python_env"]
+    benchmark: OUT_FOLDER + "/benchmarks/vizualizeClusters/{sample}.log"
+    shell:
+        """
+        papermill {input.notebook} {output.notebook} -p sample {wildcards.sample} -p out_folder {params.out_folder}
+        """
+
+rule transcriptomicsAnalysis:
+    input:
+        OUT_FOLDER + "/summary/summary_best_split_sample.csv",
+        rmd = "../workflows/analysis/transcriptomicsAnalysis.Rmd"
+    output:
+        output_file = OUT_FOLDER + "/summary/transcriptomicsAnalysis_{sample}.html"
+    threads: 4
+    params:
+        dataset = DATASET
+    resources:
+        gpu="gpu:0",
+        p="compute,gpu",
+        mem_mb=MEM_RULES["transcriptomicsAnalysis"],
+        time=TIME_RULES["transcriptomicsAnalysis"],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname="transcriptomicsAnalysis",
+        tmp=TMP_MEM["transcriptomicsAnalysis"]
+    conda: CONDA_ENV["python_env"]
+    benchmark: OUT_FOLDER + "/benchmarks/transcriptomicsAnalysis/{sample}.log"
+    shell:
+        """
+        Rscript -e "rmarkdown::render('{input.rmd}', params=list(sample='{wildcards.sample}', dataset='{params.dataset}'), output_file='../../{params.dataset}/{output.output_file}')"
+        """
+
+
+####################################################################################
+
+##################################### BENCHMARK ####################################
+
+####################################################################################
+
+
+rule benchmark_summary:
+    input:
+        OUT_FOLDER + "/summaryARI.ipynb",
+        notebook = "../workflows/analysis/benchmark_summary.ipynb"
+    output:
+        notebook = OUT_FOLDER + "/benchmark_summary.ipynb"
+    params:
+        out_folder = OUT_FOLDER
+    threads: 1
+    resources:
+        gpu="gpu:0",
+        p="compute,gpu",
+        mem_mb=MEM_RULES["benchmark_summary"],
+        time=TIME_RULES["benchmark_summary"],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname="benchmark_summary",
+        tmp=TMP_MEM["benchmark_summary"]
+    conda: CONDA_ENV["python_env"]
+    benchmark: OUT_FOLDER + "/benchmarks/benchmark_summary.log"
+    shell:
+        """
+        papermill {input.notebook} {output.notebook} -p out_folder {params.out_folder}
+        """

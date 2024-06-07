@@ -1,0 +1,8 @@
+morphology_weight:
+    - 3
+window_size:
+    - 5
+    - 7
+refine_cluster:
+    - 0
+    - 1

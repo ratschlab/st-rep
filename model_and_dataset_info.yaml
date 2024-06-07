@@ -1,0 +1,28 @@
+model_modality:
+    Leiden: transcriptomics
+    Mclust: transcriptomics
+    Louvain: transcriptomics
+    BayesSpace: transcriptomics + spatial
+    GraphST: transcriptomics + spatial
+    STAGATE: transcriptomics + spatial
+    MUSE: transcriptomics + image
+    Baseline: transcriptomics + image
+    AESTETIK: transcriptomics + spatial + image
+    stLearn: transcriptomics + spatial + image
+    SpaGCN: transcriptomics + spatial + image
+
+
+
+
+#######
+
+dataset:
+    maynard_human_brain_analysis: LIBD Human DLPFC
+    human_breast_cancers: Human Breast Cancer
+    10x_TuPro_v2: Tumor Profiler
+    cosMx_human_liver_cancer: Human Liver Cancer
+    cosMx_human_liver_normal: Human Liver Normal
+    simulated_data_5_clusters: Simulated Data (5)
+    simulated_data_10_clusters: Simulated Data (10)
+    simulated_data_15_clusters: Simulated Data (15)
+    test_data: Test data

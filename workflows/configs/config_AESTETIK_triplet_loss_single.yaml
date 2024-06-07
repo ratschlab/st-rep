@@ -1,0 +1,16 @@
+morphology_weight:
+    - 0
+    - 1
+    - 1.5
+    - 2
+    - 3
+window_size:
+    - 5
+    - 7
+refine_cluster:
+    - 0
+    - 1
+triplet_alpha:
+    - 1
+multi_triplet_loss:
+    - 0

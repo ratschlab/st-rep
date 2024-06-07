@@ -1,0 +1,25 @@
+
+SAMPLE:
+   - "A"
+   - "B"
+   
+DATASET: "test_data"
+OUT_FOLDER: "out_benchmark"
+
+CROSS_VALIDATION_SPLIT:    
+    - [["A"], ["B"]]
+    - [["B"], ["A"]]
+
+MODEL_R:
+
+MODEL_PYTHON: 
+
+MODEL_FINE_TUNE:
+    - AESTETIK
+    - GraphST
+
+IMAGE_FEATURES:
+    - inception
+
+DOWNSAMPLE_FACTOR: 1
+IMAGE_FORMAT: "png"

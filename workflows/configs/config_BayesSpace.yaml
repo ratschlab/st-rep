@@ -1,0 +1,19 @@
+platform:
+    - Visium
+d:
+    - 15
+init.method:
+    - mclust
+model:
+    - t
+    - normal
+gamma:
+    - 3
+    - 2
+    - 1
+nrep:
+    - 50000
+burn.in:
+    - 1000
+save.chain:
+    - 0

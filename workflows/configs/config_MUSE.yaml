@@ -1,0 +1,14 @@
+n_components:
+    - 15
+latent_dim:
+    - 100
+n_epochs:
+    - 500
+lambda_regul:
+    - 1
+    - 5
+    - 10
+lambda_super:
+    - 1
+    - 5
+    - 10

@@ -1,0 +1,37 @@
+SAMPLE:
+   - CID4465
+   - 1160920F
+   - CID4290 # low quality annotations
+   - CID44971
+   - CID4535
+   - 1142243F
+
+DATASET: "human_breast_cancers"
+OUT_FOLDER: "out_benchmark"
+CROSS_VALIDATION_SPLIT:
+    - [[CID4465], [CID44971, CID4535]]
+    - [[CID44971], [CID4535, CID4465]]
+    - [[CID4535], [CID44971, CID4465]]
+    - [[1142243F], [1160920F]]
+    - [[1160920F], [1142243F]]
+
+MODEL_R:  
+   - Leiden
+
+MODEL_PYTHON: 
+   - Baseline
+   
+MODEL_FINE_TUNE:
+    - AESTETIK
+    - SpaGCN
+    - GraphST
+    - STAGATE
+    - MUSE
+    - stLearn
+    - BayesSpace
+
+IMAGE_FEATURES:
+    - inception
+
+DOWNSAMPLE_FACTOR: 1
+IMAGE_FORMAT: "png"

@@ -1,0 +1,12 @@
+n_components:
+    - 15
+cnn_base:
+    - inception_v3 
+weights:
+    - weights_matrix_all
+    - weights_matrix_pd_gd
+    - weights_matrix_pd_md
+    - weights_matrix_gd_md
+    - gene_expression_correlation
+    - physical_distance
+    - morphological_distance

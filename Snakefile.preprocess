@@ -1,0 +1,228 @@
+from itertools import product
+from pathlib import Path
+from tqdm import tqdm
+import socket
+import yaml
+
+####################################################################################
+
+################################# CLUSTER CONFIG ###################################
+
+####################################################################################
+
+
+with open("info.yaml", "r") as stream:
+    DATASET_INFO = yaml.safe_load(stream)
+    
+with open("../Snakemake_info.yaml", "r") as stream:
+    SNAKEMAKE_INFO = yaml.safe_load(stream)
+
+DATASET = DATASET_INFO["DATASET"]
+OUT_FOLDER = DATASET_INFO[f"OUT_FOLDER"]
+SAMPLES = DATASET_INFO["SAMPLE"]
+MODEL_R = DATASET_INFO["MODEL_R"] if DATASET_INFO["MODEL_R"] else list()
+MODEL_PYTHON = DATASET_INFO["MODEL_PYTHON"] if DATASET_INFO["MODEL_PYTHON"] else list()
+MODEL_FINE_TUNE = DATASET_INFO["MODEL_FINE_TUNE"] if DATASET_INFO["MODEL_FINE_TUNE"] else list()
+DOWNSAMPLE_FACTOR = DATASET_INFO["DOWNSAMPLE_FACTOR"]
+CROSS_VALIDATION_SPLIT = DATASET_INFO["CROSS_VALIDATION_SPLIT"]
+IMAGE_FORMAT = DATASET_INFO["IMAGE_FORMAT"]
+IMAGE_FEATURES = DATASET_INFO["IMAGE_FEATURES"]
+
+CONDA_ENV = SNAKEMAKE_INFO["CONDA_ENV"]
+LANGUAGE = SNAKEMAKE_INFO["LANGUAGE"]
+PARTITION = SNAKEMAKE_INFO["PARTITION"]
+GPU = SNAKEMAKE_INFO["GPU"]
+MEM = SNAKEMAKE_INFO["MEM"]
+TIME = SNAKEMAKE_INFO["TIME"]
+CPU = SNAKEMAKE_INFO["CPU"]
+MEM_RULES = SNAKEMAKE_INFO["MEM_RULES"]
+TMP_MEM = SNAKEMAKE_INFO["TMP_MEM"]
+TIME_RULES = SNAKEMAKE_INFO["TIME_RULES"]
+
+
+####################################################################################
+
+##################################### FOLDERS  #####################################
+
+####################################################################################
+
+CROSS_VALIDATION_SPLIT_NAMES = []
+CROSS_VALIDATION_SPLIT_DICT = {}
+PARAMETER_FILE_NAMES_DICT = {}
+
+# Create directories
+folders_to_create = [
+    "summary", "benchmarks", "data/h5ad", "data/rds", "data/image", "data/image_features",
+    "data/meta", "logs"
+]
+
+for folder in folders_to_create:
+    Path(f"{OUT_FOLDER}/{folder}").mkdir(parents=True, exist_ok=True)
+
+# Process splits
+for train_on, test_on in tqdm(CROSS_VALIDATION_SPLIT):
+    train_on_str = "_".join(train_on)
+    test_on_str = "_".join(test_on)
+    split_name = f"{train_on_str}_test_{test_on_str}"
+
+    CROSS_VALIDATION_SPLIT_DICT[train_on_str] = test_on
+    CROSS_VALIDATION_SPLIT_DICT[test_on_str] = train_on
+    CROSS_VALIDATION_SPLIT_DICT[split_name] = [train_on, test_on]
+
+    for model in MODEL_PYTHON + MODEL_R:
+        Path(f"{OUT_FOLDER}/{split_name}/{model}_evaluate/clusters_default").mkdir(parents=True, exist_ok=True)
+
+    for model in MODEL_FINE_TUNE:
+        fine_tune_folder = f"{OUT_FOLDER}/{split_name}/{model}_fine_tune"
+        Path(fine_tune_folder).mkdir(parents=True, exist_ok=True)
+
+        for subfolder in ["clusters", "latent", "parameters", "loss"]:
+            Path(f"{fine_tune_folder}/{subfolder}").mkdir(parents=True, exist_ok=True)
+
+        Path(f"{OUT_FOLDER}/{split_name}/{model}_evaluate/clusters").mkdir(parents=True, exist_ok=True)
+        Path(f"{OUT_FOLDER}/{split_name}/{model}_evaluate/latent").mkdir(parents=True, exist_ok=True)
+        Path(f"{OUT_FOLDER}/{split_name}/{model}_evaluate/loss").mkdir(parents=True, exist_ok=True)
+
+        with open(f"../workflows/configs/config_{model}.yaml", "r") as stream:
+            INFO = yaml.safe_load(stream)
+
+        parameter_settings = [dict(zip(INFO, v)) for v in product(*INFO.values())]
+
+        PARAMETER_FILE_NAMES = []
+        for setting in parameter_settings:
+        
+            name_setting = str(setting).replace("'", "").replace(" ", "").replace("{", "").replace("}", "").replace(":", "_").replace(",", "_")
+            param_path = f"{OUT_FOLDER}/{split_name}/{model}_fine_tune/parameters/{name_setting}.yaml"
+            
+            if not os.path.isfile(param_path):
+                with open(param_path, "w") as outfile:
+                    yaml.dump(setting, outfile, default_flow_style=False)
+
+            PARAMETER_FILE_NAMES.append(name_setting)
+
+        PARAMETER_FILE_NAMES_DICT[model] = PARAMETER_FILE_NAMES
+
+    CROSS_VALIDATION_SPLIT_NAMES.append(split_name)
+
+
+####################################################################################
+
+#################################### MAIN RULE #####################################
+
+####################################################################################
+
+
+rule all:
+    input:
+        expand(OUT_FOLDER + "/data/h5ad/{sample}.h5ad", sample=SAMPLES),
+        expand(OUT_FOLDER + "/data/rds/{sample}.rds", sample=SAMPLES),
+        expand(OUT_FOLDER + "/data/image/{sample}." + IMAGE_FORMAT, sample=SAMPLES),
+        expand(OUT_FOLDER + "/data/image_features/{sample}_{image_feature}.npy", sample=SAMPLES, image_feature=IMAGE_FEATURES),
+        expand(OUT_FOLDER + "/data/meta/{sample}.json", sample=SAMPLES)
+
+####################################################################################
+
+#################################### PREPROCESS ####################################
+
+####################################################################################
+
+rule preprocessH5AD:
+    input:
+        pyscript = f"../workflows/preprocess/preprocessH5AD_{DATASET}.py"
+    output:
+        OUT_FOLDER + "/data/h5ad/{sample}.h5ad"
+    params:
+        downsample_factor = DOWNSAMPLE_FACTOR,
+        out_folder = OUT_FOLDER
+    threads: 1
+    resources:
+        p="compute,gpu",
+        gpu="gpu:0",
+        mem_mb=MEM_RULES["preprocessH5AD"],
+        time=TIME_RULES["preprocessH5AD"],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname="preprocessH5AD",
+        tmp=TMP_MEM["preprocessH5AD"]
+    conda: CONDA_ENV["python_env"]
+    benchmark: OUT_FOLDER + "/benchmarks/preprocessH5AD/{sample}.log"
+    shell:
+        """
+        python {input.pyscript} {wildcards.sample} {params.downsample_factor} {params.out_folder}
+        """
+
+rule structureData:
+    input:
+        pyscript = f"../workflows/preprocess/structure_data_{DATASET}.py"
+    output:
+        OUT_FOLDER + "/data/image/{sample}." + IMAGE_FORMAT,
+        OUT_FOLDER + "/data/meta/{sample}.json",
+    params:
+        out_folder = OUT_FOLDER
+    threads: 1
+    resources:
+        p="compute,gpu",
+        gpu="gpu:0",
+        mem_mb=MEM_RULES["structureData"],
+        time=TIME_RULES["structureData"],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname="structureData",
+        tmp=TMP_MEM["structureData"]
+    conda: CONDA_ENV["python_env"]
+    benchmark: OUT_FOLDER + "/benchmarks/structureData/{sample}.log"
+    shell:
+        """
+        python {input.pyscript} {wildcards.sample} {params.out_folder}
+        """
+
+rule extract_image_features:
+    input:
+        OUT_FOLDER + "/data/h5ad/{sample}.h5ad",
+        OUT_FOLDER + "/data/image/{sample}." + IMAGE_FORMAT,
+        OUT_FOLDER + "/data/meta/{sample}.json",
+        pyscript = "../workflows/preprocess/extract_image_features_{image_feature}.py"
+    output:
+        OUT_FOLDER + "/data/image_features/{sample}_{image_feature}.npy"
+    params:
+        node = socket.gethostname(),
+        out_folder = OUT_FOLDER
+    threads: 1
+    resources:
+        p="gpu",
+        gpu="gpu:1",
+        mem_mb=MEM_RULES["extract_image_features"],
+        time=TIME_RULES["extract_image_features"],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname="extract_image_features",
+        tmp=TMP_MEM["extract_image_features"]
+    conda: CONDA_ENV["python_env"]
+    benchmark: OUT_FOLDER + "/benchmarks/extract_image_features/{sample}_{image_feature}.log"
+    shell:
+        """
+        echo {params.node}
+        python {input.pyscript} {wildcards.sample} {params.out_folder}
+        """
+
+
+rule createSeuratRDSfromH5AD:
+    input:
+        Rscript = "../workflows/preprocess/createSeuratRDSfromH5AD.R",
+        h5ad = OUT_FOLDER + "/data/h5ad/{sample}.h5ad"
+    output:
+        OUT_FOLDER + "/data/rds/{sample}.rds"
+    params:
+        out_folder = OUT_FOLDER
+    threads: 1
+    resources:
+        p="compute,gpu",
+        gpu="gpu:0",
+        mem_mb=MEM_RULES["createSeuratRDSfromH5AD"],
+        time=TIME_RULES["createSeuratRDSfromH5AD"],
+        log=OUT_FOLDER + "/logs/slurm-%j.out",
+        jobname="createSeuratRDSfromH5AD",
+        tmp=TMP_MEM["createSeuratRDSfromH5AD"]
+    conda: CONDA_ENV["python_env"]
+    benchmark: OUT_FOLDER + "/benchmarks/createSeuratRDSfromH5AD/{sample}.log"
+    shell:
+        """
+        Rscript {input.Rscript} {wildcards.sample} {params.out_folder}
+        """
