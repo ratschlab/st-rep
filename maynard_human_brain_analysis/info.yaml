@@ -13,7 +13,7 @@ SAMPLE:
    - "151676"
    
 DATASET: "maynard_human_brain_analysis"
-OUT_FOLDER: "out_benchmark"
+OUT_FOLDER: "out_aestetik"
 
 CROSS_VALIDATION_SPLIT:    
     - [["151507", "151508"], ["151509", "151510", "151669", "151670", "151671", "151672", "151673", "151674", "151675", "151676"]]
@@ -24,7 +24,7 @@ CROSS_VALIDATION_SPLIT:
     - [["151675", "151676"], ["151507", "151508", "151509", "151510", "151669", "151670", "151671", "151672", "151673", "151674"]]
 
 MODEL_R:  
-   - Leiden
+#   - Leiden
 
 MODEL_PYTHON: 
    - Baseline
@@ -35,8 +35,8 @@ MODEL_FINE_TUNE:
     - GraphST
     - STAGATE
     - MUSE
-    - stLearn
-    - BayesSpace
+#    - stLearn
+#    - BayesSpace
 
 
 IMAGE_FEATURES:

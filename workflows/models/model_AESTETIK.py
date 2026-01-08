@@ -119,23 +119,16 @@ adata.obsm["X_pca_morphology"] = img_features[:,0:n_components]
 # In[ ]:
 
 
-model = AESTETIK(adata, 
-                 nCluster=adata.obs.ground_truth.unique().size, 
-                 img_path=img_path,
-                 spot_diameter_fullres=spot_diameter_fullres,
+model = AESTETIK(nCluster=adata.obs.ground_truth.unique().size, 
+#                 img_path=img_path,
+#                 spot_diameter_fullres=spot_diameter_fullres,
                  **parameters)
 
 
 # In[ ]:
 
 
-model.prepare_input_for_model()
-
-
-# In[ ]:
-
-
-model.train()
+model.fit(X=adata)
 
 
 # ### 6. Compute embeddings and clustering
@@ -143,7 +136,7 @@ model.train()
 # In[ ]:
 
 
-model.compute_spot_representations()
+model.predict(X=adata, cluster=True)
 
 
 # ### 7. Save clusters
@@ -162,5 +155,3 @@ cluster_out.to_csv(cluster_out_path, index=False)
 # save latent space
 latent_space = pd.DataFrame(adata.obsm["AESTETIK"], index=adata.obs.index)
 latent_space.to_csv(latent_out_path)
-# save loss
-np.save(loss_out_path, model.losses)
